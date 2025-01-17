@@ -138,14 +138,15 @@ jobs:
           -G "Ninja"
           -DCMAKE_BUILD_TYPE="${{env.cmake_buildtype}}"
           -DCMAKE_PREFIX_PATH="${{env.prefix_path_forwardslash}}/lib/cmake"
-          -DBUILD_WITH_QT6=ON
           -DARCH="${{matrix.arch}}"
           -DENABLE_WIN32_CONSOLE=${{env.win32_console}}
-          -DUSE_TAGLIB=ON
           -DPKG_CONFIG_EXECUTABLE="${{env.prefix_path_forwardslash}}/bin/pkg-config.exe"
           -DICU_ROOT="${{env.prefix_path_forwardslash}}"
-          -DFFTW3_DIR="${{env.prefix_path_forwardslash}}"
-          -DBoost_INCLUDE_DIR="${{env.prefix_path_forwardslash}}/include"
+          -DENABLE_GIO=OFF
+          -DENABLE_AUDIOCD=OFF
+          -DENABLE_MTP=OFF
+          -DENABLE_GPOD=OFF
+          -DENABLE_SPOTIFY=ON
 
       - name: Run Make
         shell: cmd
@@ -239,7 +240,6 @@ jobs:
         shell: cmd
         working-directory: build
         run: |
-          copy ..\dist\windows\*.nsi .
           copy ..\dist\windows\*.nsh .
           copy ..\dist\windows\*.ico .
 
@@ -279,6 +279,11 @@ jobs:
             echo "Files missing in nsi: ${files_missing}"
             exit 1
           fi
+
+      - name: Download MSVC runtime
+        shell: bash
+        working-directory: build
+        run: curl -f -O -L https://aka.ms/vs/17/release/vc_redist.$(test "${{matrix.arch}}" = "x86_64" && echo "x64" || echo "${{matrix.arch}}").exe
 
       - name: Create nsis installer
         shell: cmd
