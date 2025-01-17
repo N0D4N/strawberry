@@ -23,6 +23,15 @@ jobs:
       - name: Set cmake buildtype
         shell: bash
         run: echo "cmake_buildtype=$(echo ${{matrix.buildtype}} | sed 's/.*/\u&/')" >> $GITHUB_ENV
+        
+      - name: Show SDK versions
+        shell: bash
+        run: ls -la "c:/Program Files (x86)/Windows Kits/10/include"
+
+      - name: Set SDK version
+        if: matrix.arch != 'arm64'
+        shell: bash
+        run: echo "sdk_version=10.0.19041.0" >> $GITHUB_ENV  
 
       - name: Cleanup PATH
         uses: egor-tensin/cleanup-path@v4
@@ -102,11 +111,11 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{matrix.arch}}
-          sdk: 10.0.20348.0
+          sdk: ${{env.sdk_version}}
           vsversion: 2022
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           submodules: recursive
@@ -119,15 +128,18 @@ jobs:
         shell: cmd
         run: cmake -E make_directory build
 
-      - name: Set ENABLE_WIN32_CONSOLE (debug)
-        if: matrix.buildtype == 'debug'
+      - name: Set ENABLE_WIN32_CONSOLE
         shell: bash
-        run: echo "win32_console=ON" >> $GITHUB_ENV
+        run: echo "enable_win32_console=$(test "${{matrix.buildtype}}" = "debug" && echo "ON" || echo "OFF")" >> $GITHUB_ENV
 
-      - name: Set ENABLE_WIN32_CONSOLE (release)
-        if: matrix.buildtype == 'release'
+      - name: Set ENABLE_SPOTIFY
         shell: bash
-        run: echo "win32_console=OFF" >> $GITHUB_ENV
+        run: echo "enable_spotify=$(test -f "${{env.prefix_path_unix}}/lib/gstreamer-1.0/gstspotify.dll" && echo "ON" || echo "OFF")" >> $GITHUB_ENV
+
+      - name: Remove -lm from .pc files
+        if: matrix.arch == 'arm64'
+        shell: bash
+        run: sed -i 's/\-lm$//g' ${{env.prefix_path_unix}}/lib/pkgconfig/*.pc
 
       - name: Run CMake
         shell: cmd
@@ -138,14 +150,15 @@ jobs:
           -G "Ninja"
           -DCMAKE_BUILD_TYPE="${{env.cmake_buildtype}}"
           -DCMAKE_PREFIX_PATH="${{env.prefix_path_forwardslash}}/lib/cmake"
-          -DBUILD_WITH_QT6=ON
           -DARCH="${{matrix.arch}}"
-          -DENABLE_WIN32_CONSOLE=${{env.win32_console}}
-          -DUSE_TAGLIB=ON
+          -DENABLE_WIN32_CONSOLE=${{env.enable_win32_console}}
           -DPKG_CONFIG_EXECUTABLE="${{env.prefix_path_forwardslash}}/bin/pkg-config.exe"
           -DICU_ROOT="${{env.prefix_path_forwardslash}}"
-          -DFFTW3_DIR="${{env.prefix_path_forwardslash}}"
-          -DBoost_INCLUDE_DIR="${{env.prefix_path_forwardslash}}/include"
+          -DENABLE_GIO=OFF
+          -DENABLE_AUDIOCD=OFF
+          -DENABLE_MTP=OFF
+          -DENABLE_GPOD=OFF
+          -DENABLE_SPOTIFY=${{env.enable_spotify}}
 
       - name: Run Make
         shell: cmd
@@ -239,7 +252,6 @@ jobs:
         shell: cmd
         working-directory: build
         run: |
-          copy ..\dist\windows\*.nsi .
           copy ..\dist\windows\*.nsh .
           copy ..\dist\windows\*.ico .
 
@@ -279,6 +291,11 @@ jobs:
             echo "Files missing in nsi: ${files_missing}"
             exit 1
           fi
+
+      - name: Download MSVC runtime
+        shell: bash
+        working-directory: build
+        run: curl -f -O -L https://aka.ms/vs/17/release/vc_redist.$(test "${{matrix.arch}}" = "x86_64" && echo "x64" || echo "${{matrix.arch}}").exe
 
       - name: Create nsis installer
         shell: cmd
